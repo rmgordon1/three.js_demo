@@ -1,9 +1,7 @@
 import * as THREE from 'three'
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js'
-import { fitToEnvelope } from './boatModel.js'
-
 /** Served out of static/. Idle and run clips on a skinned elephant. */
-const MODEL_URL = '/elephant.002.glb'
+const MODEL_URL = '/models/elephant.002.glb'
 
 /**
  * Gameplay envelope. The mesh is scaled to this length; beam is the
@@ -223,16 +221,58 @@ export function sampleOrb(orb, target, scratch = new THREE.Vector3())
 }
 
 /**
+ * Scales a loaded model to `length` along Z. Uniform scale keyed to the long
+ * axis, so nothing gets stretched.
+ *
+ * Returns a wrapper centred in X and Z, with `submergedFraction` of the
+ * model's height below y = 0. At the default of 0 it stands on y = 0.
+ */
+export function fitToEnvelope(object, { length = ELEPHANT.length, submergedFraction = 0, yaw = 0 } = {})
+{
+    // Yaw first: the long axis has to be along Z before we measure it.
+    object.rotation.y += yaw
+    object.updateWorldMatrix(false, true)
+
+    const bounds = new THREE.Box3().setFromObject(object)
+    const size = bounds.getSize(new THREE.Vector3())
+    const center = bounds.getCenter(new THREE.Vector3())
+
+    if (!(size.z > 0)) throw new Error('model has no measurable length along Z')
+
+    const scale = length / size.z
+
+    object.position.x -= center.x
+    object.position.z -= center.z
+    object.position.y -= bounds.min.y + size.y * submergedFraction
+
+    const wrapper = new THREE.Group()
+    wrapper.scale.setScalar(scale)
+    wrapper.add(object)
+
+    const shift = object.position.clone()
+
+    return {
+        wrapper,
+        scale,
+        /** Fitted size in world units, handy for sanity checks. */
+        size: size.clone().multiplyScalar(scale),
+        /**
+         * Converts a point in the model's own units into the fitted local
+         * frame, so attachment points can be authored in model space.
+         */
+        toLocal: (point, target = new THREE.Vector3()) =>
+            target.copy(point).add(shift).multiplyScalar(scale)
+    }
+}
+
+/**
  * Scales the elephant onto the ground plane and pulls out the two gait clips.
  * The wrapper's origin is on the ground, centred, facing +Z.
  */
 export function prepareElephant(gltf)
 {
     const seatPoint = carpetTop(gltf.scene)
-    const { wrapper, scale, size, toLocal } = fitToEnvelope(gltf.scene, {
-        length: ELEPHANT.length,
-        submergedFraction: 0
-    })
+    const { wrapper, scale, size, toLocal } = fitToEnvelope(gltf.scene)
 
     gltf.scene.traverse((child) =>
     {

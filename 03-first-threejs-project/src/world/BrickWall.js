@@ -3,7 +3,7 @@ import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js'
 import { ELEPHANT } from '../entities/Elephant.js'
 
 /** One brick from static/brick.glb. The wall in that file is this brick, repeated. */
-const BRICK_URL = '/brick.glb'
+const BRICK_URL = '/models/brick.glb'
 
 /** Thickness, height, and length of the authored brick, in metres. */
 export const BRICK = { width: 0.75, height: 0.75, length: 2 }

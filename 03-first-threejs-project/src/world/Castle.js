@@ -3,17 +3,17 @@ import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js'
 import { ReentryFire } from './ReentryFire.js'
 
 /** The outer castles. Served out of static/. */
-const RING_URL = '/triple_castle.glb'
+const RING_URL = '/models/triple_castle.glb'
 
 /** The castle you start in. Same export units as the ring, so it takes the same scale. */
-const MAIN_URL = '/main_castle.glb'
+const MAIN_URL = '/models/main_castle.glb'
 
 /**
  * Hung in the main courtyard's ring. The file is already in that castle's
  * units: the hull runs through the opening, and the crown of the hull meets
  * the two chains that drop from `sub_stand` on either side of the sail.
  */
-const SUBMARINE_URL = '/submarine.glb'
+const SUBMARINE_URL = '/models/submarine.glb'
 /** Horizontal metres from the hatch before it starts to open. */
 const HATCH_REACH = 2.8
 /** Closer than the open radius: standing at the lip, able to step in. */
@@ -56,7 +56,7 @@ const DISCO_SPEED = 0.18
  * by SCALE. The arched door is on the +Z face, and the metal base runs out
  * past it as a walkway (about x ±0.6, z 3 to 5.6 before scaling).
  */
-const SCALE = 5
+export const SCALE = 5
 
 /** Walkable top of the ring castle's metal base, in model units. */
 const MODEL_DECK_Y = -0.308
@@ -1474,6 +1474,32 @@ export class Castle
         }
 
         if (this.variant === 'main') advanceMarquee(delta)
+    }
+
+    /**
+     * The last stretch of the landing, against the arched door.
+     * Only the triple castles. Standing here and pressing E is the way in.
+     */
+    atDoor(position)
+    {
+        if (this.variant !== 'ring') return false
+
+        const local = this.worldToLocal(position.x, position.z)
+        return local.x >= -2.7 && local.x <= 2.7
+            && local.z >= 7.05 && local.z <= 8.55
+            && position.y >= 0.35 && position.y <= 2.15
+    }
+
+    /**
+     * On the landing, a few metres out from the door, looking along the
+     * walkway away from the castle. Writes the world position and returns the yaw.
+     */
+    doorExit(target)
+    {
+        const placed = this.localToWorld(0, 10.5)
+        const y = this.surfaceAt(placed.x, placed.z)
+        target.set(placed.x, Number.isFinite(y) ? y : DECK_Y, placed.z)
+        return this.yaw + Math.PI
     }
 
     /** Horizontal metres to the lid, or Infinity when the visitor is on another deck. */

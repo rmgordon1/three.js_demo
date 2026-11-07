@@ -1,7 +1,5 @@
 import * as THREE from 'three'
 import { flightBoxesNear } from '../world/Castle.js'
-import { terrainHeight } from '../world/terrain.js'
-import { waterHeight } from '../world/waves.js'
 import { ELEPHANT, disposeTree, loadElephantModel, sampleOrb } from './elephantModel.js'
 import { EyeFire, PURPLE_FLAME } from './EyeFire.js'
 
@@ -18,7 +16,7 @@ const PITCH_RATE = 1.4
 const PITCH_RESPONSE = 3.5
 const PITCH_LIMIT = 1.15
 
-/** She can leave the ground, but not the island's sky. */
+/** She can leave the ground, but not the sky. */
 const MAX_ALTITUDE = 80
 
 /** Below this, the run clip blends out and she holds the idle. */
@@ -28,14 +26,11 @@ const GAIT_FULL = 1.1
 /** Travel speed at which the run clip plays at its authored rate. */
 const RUN_REFERENCE_SPEED = 7
 
-/** How close to the land or the sea she must be before the rider can step off. */
+/** How close to the ground she must be before the rider can step off. */
 const DISMOUNT_HEIGHT = 2.6
 /** Hovering this far above a platform still counts as standing on it. */
 const DISMOUNT_DROP = 12
 const DISMOUNT_SPEED = 1.3
-
-/** Keeps her soles off the wave crests when she skims the sea. */
-const SURFACE_CLEARANCE = 0.15
 
 /**
  * A deck this close above her feet still catches a dive. Anything higher is
@@ -164,13 +159,13 @@ export class Elephant
     /**
      * @param {THREE.Vector3} position
      * @param {{ loadModel?: boolean, yaw?: number, floor?: ((x: number, z: number, ceiling?: number) => number) | null, castles?: { worldToLocal: Function, localToWorld: Function, walls: THREE.Box3[] }[] }} options
-     * `floor` replaces the island and the sea. Return -Infinity where there
-     * is no ground, and she will fly through open sky. The third argument is
+     * `floor` is the ground under her. Return -Infinity where there is no
+     * ground, and she will fly through open sky. Without one, it is all sky. The third argument is
      * the highest surface that can still hold her; decks above it are open
      * air, which is how she flies through the cloud under a castle.
      * `castles` are the stone she cannot pass through.
      */
-    constructor(position, { loadModel = true, yaw = 0, floor = null, castles = null } = {})
+    constructor(position, { loadModel = true, yaw = 0, floor = () => Number.NEGATIVE_INFINITY, castles = null } = {})
     {
         this.group = new THREE.Group()
         this.group.rotation.order = 'YXZ'
@@ -210,7 +205,7 @@ export class Elephant
         this.position = position.clone()
         this.floorFn = floor
         this.castles = castles
-        const floorY = this.#floor(position.x, position.z, 0, this.position.y + SUPPORT_REACH)
+        const floorY = this.#floor(position.x, position.z, this.position.y + SUPPORT_REACH)
         if (this.position.y < floorY) this.position.y = floorY
 
         this.yaw = yaw
@@ -260,19 +255,14 @@ export class Elephant
     }
 
     /**
-     * Land, or the sea, whichever is higher. She flies above this, not through
-     * it. `ceiling` drops any deck that is overhead, so a court she is flying
-     * under does not count as ground.
+     * The ground under her. She flies above this, not through it. `ceiling`
+     * drops any deck that is overhead, so a court she is flying under does
+     * not count as ground.
      */
-    #floor(x, z, time, ceiling = Infinity)
+    #floor(x, z, ceiling = Infinity)
     {
-        if (this.floorFn)
-        {
-            const height = this.floorFn(x, z, ceiling)
-            return Number.isFinite(height) ? height : Number.NEGATIVE_INFINITY
-        }
-
-        return Math.max(terrainHeight(x, z), waterHeight(x, z, time) + SURFACE_CLEARANCE)
+        const height = this.floorFn(x, z, ceiling)
+        return Number.isFinite(height) ? height : Number.NEGATIVE_INFINITY
     }
 
     /**
@@ -466,7 +456,7 @@ export class Elephant
         this.position.z = z
         this.position.y = THREE.MathUtils.clamp(
             y,
-            this.#floor(x, z, time, y + SUPPORT_REACH),
+            this.#floor(x, z, y + SUPPORT_REACH),
             MAX_ALTITUDE
         )
 
@@ -605,17 +595,6 @@ export class Elephant
     }
 
     /**
-     * Feet on the ground, or back level with it. The parked pose sinks her
-     * soles below the walkway, so the back is the height that counts there.
-     */
-    #nearEnoughToStep(surface)
-    {
-        const feet = Math.abs(this.position.y - surface)
-        const back = Math.abs(this.position.y + ELEPHANT.back - surface)
-        return Math.min(feet, back) <= DISMOUNT_HEIGHT
-    }
-
-    /**
      * A spot beside her, once she is slow and near the ground.
      * In the air there is nowhere to step, so this returns null.
      * The returned vector is reused on the next call.
@@ -624,24 +603,7 @@ export class Elephant
     {
         if (Math.abs(this.forwardSpeed) > DISMOUNT_SPEED) return null
 
-        if (this.floorFn) return this.#dismountOnFloor()
-
-        const surface = Math.max(terrainHeight(this.position.x, this.position.z), 0)
-        if (!this.#nearEnoughToStep(surface)) return null
-
-        const reach = ELEPHANT.beam * 0.5 + 0.9
-
-        for (const side of [1, -1])
-        {
-            this.#side.copy(this.position).addScaledVector(this.right, side * reach)
-            const ground = terrainHeight(this.#side.x, this.#side.z)
-
-            // Prefer a dry landing. Over the sea, step off at her own height.
-            this.#side.y = ground > 0.4 ? ground : Math.max(this.position.y, ground)
-            if (ground > 0.4 || side === -1) return this.#side
-        }
-
-        return null
+        return this.#dismountOnFloor()
     }
 
     /**

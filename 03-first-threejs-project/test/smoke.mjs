@@ -1,23 +1,17 @@
 /**
  * Headless checks for the parts of the game that are pure maths: wave
- * sampling, the island profile, the procedural geometry and the two
- * controllers. Run with `npm test`.
+ * sampling, the island profile, the castles, the elephant and the player.
+ * Run with `npm test`.
  */
 
 import * as THREE from 'three'
 import { waterHeight, waterNormal, WAVE_AMPLITUDE_SUM } from '../src/world/waves.js'
-import { terrainHeight, terrainProfile, SHORE_RADIUS, HILL_RADIUS, SEABED_RADIUS, ISLAND_CENTER, islandRadius } from '../src/world/terrain.js'
-import { Dock, DOCK, fitDock } from '../src/world/Dock.js'
-import { Island } from '../src/world/Island.js'
-import { Boat, BOAT } from '../src/entities/Boat.js'
 import { Elephant, ELEPHANT } from '../src/entities/Elephant.js'
 import { Castle, CASTLE, CASTLE_RING, MAIN_YAW, DECK_Y, measureFlightSolids } from '../src/world/Castle.js'
 import { HOOP_COUNT, HOOP_Z_JITTER, Racetrack, hoopPoint, paintFlag } from '../src/world/Racetrack.js'
 import { Confetti } from '../src/world/Confetti.js'
 import { BrickWall, brickSlots, BRICK } from '../src/world/BrickWall.js'
-import { solidifyTusks } from '../src/entities/elephantModel.js'
-import { buildHull } from '../src/entities/placeholderHull.js'
-import { fitToEnvelope } from '../src/entities/boatModel.js'
+import { fitToEnvelope, solidifyTusks } from '../src/entities/elephantModel.js'
 import { EyeFire, PURPLE_FLAME } from '../src/entities/EyeFire.js'
 import { Player } from '../src/player/Player.js'
 
@@ -68,16 +62,6 @@ function allFinite(geometry)
     return true
 }
 
-function countVertices(object)
-{
-    let total = 0
-    object.traverse((child) =>
-    {
-        if (child.geometry) total += child.geometry.attributes.position.count
-    })
-    return total
-}
-
 // ------------------------------------------------------------------- waves
 
 group('waves', () =>
@@ -113,163 +97,14 @@ group('waves', () =>
         `${actual.toArray()} vs ${expected.toArray()}`)
 })
 
-// ----------------------------------------------------------------- terrain
-
-group('terrain', () =>
-{
-    check('profile crosses sea level at the shore radius', Math.abs(terrainProfile(SHORE_RADIUS)) < 1e-9)
-    check('profile rises inland', terrainProfile(HILL_RADIUS) > 8)
-    check('profile falls away to open-water depth', terrainProfile(SEABED_RADIUS + 5) < -12)
-
-    const spawnGround = terrainHeight(DOCK.spawn.x, DOCK.spawn.z)
-    check('sand at the landward end of the pier sits below the deck',
-        spawnGround > -0.5 && spawnGround < DOCK.deckY,
-        `height ${spawnGround.toFixed(2)}`)
-
-    const mooringDepth = terrainHeight(DOCK.mooring.x, DOCK.mooring.z)
-    check('the berth is in navigable water', mooringDepth < -2, `depth ${mooringDepth.toFixed(2)}`)
-
-    check('the pier tip is over water', terrainHeight(0, DOCK.seaZ) < 0)
-    const shoreZ = ISLAND_CENTER.z - SHORE_RADIUS
-    check('the shoreline sits against the landward end of the pier',
-        shoreZ < DOCK.landZ && shoreZ > DOCK.landZ - 12,
-        `shore z ${shoreZ.toFixed(1)}, pier ends at ${DOCK.landZ}`)
-    check('the shoreline is the shore radius from the island centre',
-        Math.abs(islandRadius(0, shoreZ) - SHORE_RADIUS) < 1e-6)
-})
-
-// -------------------------------------------------------------------- dock
-
-group('dock', () =>
-{
-    const dock = new Dock({ loadModel: false })
-
-    check('builds a standable deck', dock.platforms.length === 1)
-    check('has no railings to block the edge', dock.walls.length === 0)
-    check('deck surface is at the documented height',
-        dock.platforms[0].max.y === DOCK.deckY)
-    check('deck covers the pier footprint',
-        dock.platforms[0].min.x === -DOCK.halfWidth &&
-        dock.platforms[0].max.x === DOCK.halfWidth &&
-        dock.platforms[0].min.z === DOCK.seaZ &&
-        dock.platforms[0].max.z === DOCK.landZ)
-
-    let geometryClean = true
-    dock.group.traverse((child) =>
-    {
-        if (child.geometry && !allFinite(child.geometry)) geometryClean = false
-    })
-    check('no NaN in the dock placeholder', geometryClean)
-
-    // A stand-in with the export's proportions: long along X, stone surface
-    // at the measured height, so the fit can be checked without decoding Draco.
-    const scene = new THREE.Group()
-    const slab = new THREE.BoxGeometry(119.862, 10, 31.910)
-    slab.translate(0, 3.806 - 5, 0)
-    scene.add(new THREE.Mesh(slab))
-
-    const fitted = fitDock(scene)
-    const root = new THREE.Group()
-    root.add(fitted.wrapper)
-    root.updateMatrixWorld(true)
-    const bounds = new THREE.Box3().setFromObject(fitted.wrapper)
-    const size = bounds.getSize(new THREE.Vector3())
-
-    check('fitted dock has the authored length', Math.abs(size.z - (DOCK.landZ - DOCK.seaZ)) < 0.05,
-        `length ${size.z.toFixed(2)}`)
-    check('fitted dock keeps the model\'s width', Math.abs(fitted.halfWidth - DOCK.halfWidth) < 0.05,
-        `half-width ${fitted.halfWidth.toFixed(2)} vs ${DOCK.halfWidth.toFixed(2)}`)
-    check('stone surface lands on the deck height', Math.abs(bounds.max.y - DOCK.deckY) < 0.02,
-        `y ${bounds.max.y.toFixed(3)}`)
-    check('pier is centred on the old footprint',
-        Math.abs(bounds.min.z - DOCK.seaZ) < 0.05 && Math.abs(bounds.max.z - DOCK.landZ) < 0.05,
-        `z ${bounds.min.z.toFixed(2)}..${bounds.max.z.toFixed(2)}`)
-})
-
-// ------------------------------------------------------------------ island
-
-group('island', () =>
-{
-    const island = new Island()
-
-    let geometryClean = true
-    island.group.traverse((child) =>
-    {
-        if (child.geometry && !allFinite(child.geometry)) geometryClean = false
-    })
-
-    check('no NaN in the island geometry', geometryClean)
-    check('terrain is tessellated', countVertices(island.group) > 40000)
-
-    // Transparent water needs a backdrop everywhere the boat can reach.
-    const bounds = new THREE.Box3().setFromObject(island.group)
-    check('the seabed backdrop outruns the water sheet',
-        bounds.min.x < -1000 && bounds.max.x > 1000 && bounds.min.z < -1000 && bounds.max.z > 1000,
-        `x ${bounds.min.x.toFixed(0)}..${bounds.max.x.toFixed(0)}`)
-    check('the backdrop sits below the modelled seabed',
-        bounds.min.y < -13 && bounds.min.y > -14, `y ${bounds.min.y.toFixed(2)}`)
-})
-
-// -------------------------------------------------------------------- hull
-
-group('boat hull', () =>
-{
-    const hull = buildHull()
-
-    check('hull geometry is finite', allFinite(hull))
-
-    const bounds = hull.boundingBox ?? (hull.computeBoundingBox(), hull.boundingBox)
-    check('hull length matches the spec',
-        Math.abs((bounds.max.z - bounds.min.z) - BOAT.length) < 0.05,
-        `${(bounds.max.z - bounds.min.z).toFixed(2)}m`)
-    check('hull beam does not exceed the spec',
-        bounds.max.x - bounds.min.x <= BOAT.beam + 1e-6,
-        `${(bounds.max.x - bounds.min.x).toFixed(2)}m`)
-    check('keel reaches the design draft',
-        Math.abs(bounds.min.y + BOAT.draft) < 0.02, `${bounds.min.y.toFixed(2)}m`)
-
-    // Winding check: faces around the bilge must face away from a point known
-    // to be inside the hull, otherwise the boat renders inside-out.
-    const inside = new THREE.Vector3(0, -0.2, 0)
-    const position = hull.attributes.position
-    const index = hull.index
-    const a = new THREE.Vector3()
-    const b = new THREE.Vector3()
-    const c = new THREE.Vector3()
-    const centroid = new THREE.Vector3()
-    const normal = new THREE.Vector3()
-
-    let tested = 0
-    let outward = 0
-
-    for (let i = 0; i < index.count; i += 3)
-    {
-        a.fromBufferAttribute(position, index.getX(i))
-        b.fromBufferAttribute(position, index.getX(i + 1))
-        c.fromBufferAttribute(position, index.getX(i + 2))
-
-        centroid.copy(a).add(b).add(c).divideScalar(3)
-
-        // Stay on the well-formed midships bilge, away from the fine stem.
-        if (centroid.y > -0.1 || Math.abs(centroid.z) > 1.8) continue
-
-        normal.copy(b).sub(a).cross(c.clone().sub(a))
-        if (normal.lengthSq() < 1e-12) continue
-
-        tested++
-        if (normal.dot(centroid.clone().sub(inside)) > 0) outward++
-    }
-
-    check('bilge faces were found to test', tested > 100, `${tested} faces`)
-    check('hull faces wind outward', tested > 0 && outward === tested, `${outward}/${tested}`)
-})
-
 // ------------------------------------------------------------- model fitting
 
 group('model fitting', () =>
 {
-    // Stands in for boat2.glb: a box of its proportions, under a child node
-    // carrying the same quarter-turn about X that the real export has.
+    /** The old boat's envelope. The fake export below is built to its proportions. */
+    const ENVELOPE = { length: 6.4, beam: 3.5 }
+    const fit = (object) => fitToEnvelope(object, { length: ENVELOPE.length, submergedFraction: 0.667 })
+
     /**
      * Stands in for boat2.glb: a box of her dimensions under the same
      * quarter-turn the real export carries. The geometry is deliberately
@@ -296,17 +131,17 @@ group('model fitting', () =>
         return new THREE.Box3().setFromObject(result.wrapper)
     }
 
-    const result = fitToEnvelope(fakeExport())
+    const result = fit(fakeExport())
     const bounds = fittedBounds(result)
     const size = bounds.getSize(new THREE.Vector3())
 
-    check('scales to the authored length', Math.abs(size.z - BOAT.length) < 1e-4,
-        `${size.z.toFixed(3)} vs ${BOAT.length}`)
-    check('reports the fitted size', Math.abs(result.size.z - BOAT.length) < 1e-4)
+    check('scales to the authored length', Math.abs(size.z - ENVELOPE.length) < 1e-4,
+        `${size.z.toFixed(3)} vs ${ENVELOPE.length}`)
+    check('reports the fitted size', Math.abs(result.size.z - ENVELOPE.length) < 1e-4)
 
     // The real export is 11.11 wide over 20.52 long; scaled to 6.4 that is 3.47.
-    check('beam lands near the authored beam', Math.abs(size.x - BOAT.beam) < 0.1,
-        `${size.x.toFixed(2)} vs ${BOAT.beam}`)
+    check('beam lands near the authored beam', Math.abs(size.x - ENVELOPE.beam) < 0.1,
+        `${size.x.toFixed(2)} vs ${ENVELOPE.beam}`)
 
     check('aspect ratio is preserved', Math.abs((size.x / size.z) - (11.11 / 20.52)) < 1e-3,
         `${(size.x / size.z).toFixed(4)}`)
@@ -322,7 +157,7 @@ group('model fitting', () =>
     // An export that is off-origin must still come back centred.
     const offset = fakeExport()
     offset.children[0].position.set(37, -12, 400)
-    const offsetBounds = fittedBounds(fitToEnvelope(offset))
+    const offsetBounds = fittedBounds(fit(offset))
     const offsetCenter = offsetBounds.getCenter(new THREE.Vector3())
     check('recentres an off-origin export',
         Math.abs(offsetCenter.x) < 1e-4 && Math.abs(offsetCenter.z) < 1e-4,
@@ -336,20 +171,20 @@ group('model fitting', () =>
 
     // Attachment points are authored in model units, so the converter has to
     // land them in the same frame as the fitted mesh.
-    const fit = fitToEnvelope(fakeExport())
-    const eye = fit.toLocal(new THREE.Vector3(1.85, 2.08, 6.35))
+    const fitted = fit(fakeExport())
+    const eye = fitted.toLocal(new THREE.Vector3(1.85, 2.08, 6.35))
 
     check('converts model-space points into the fitted frame',
         eye.x > 0.4 && eye.x < 0.75 && eye.y > 0.45 && eye.y < 0.85 && eye.z > 1.8 && eye.z < 2.4,
         `eye at ${eye.toArray().map((v) => v.toFixed(3)).join(', ')}`)
 
-    const centre = fit.toLocal(new THREE.Vector3(0, 0, 0))
+    const centre = fitted.toLocal(new THREE.Vector3(0, 0, 0))
     check('the model origin maps near the waterline centre',
         Math.abs(centre.x) < 0.01 && Math.abs(centre.y) < 0.01 && Math.abs(centre.z) < 0.2,
         `${centre.toArray().map((v) => v.toFixed(3)).join(', ')}`)
 
     check('conversion is consistent with the mesh scale',
-        Math.abs(fit.toLocal(new THREE.Vector3(2, 0, 0)).x - fit.toLocal(new THREE.Vector3(1, 0, 0)).x - fit.scale) < 1e-6)
+        Math.abs(fitted.toLocal(new THREE.Vector3(2, 0, 0)).x - fitted.toLocal(new THREE.Vector3(1, 0, 0)).x - fitted.scale) < 1e-6)
 })
 
 // --------------------------------------------------------------------- fire
@@ -437,100 +272,6 @@ group('eye fire', () =>
     })())
 })
 
-// ----------------------------------------------------------- boat behaviour
-
-function run(boat, controls, seconds, navigable = () => true)
-{
-    const step = 1 / 60
-    for (let i = 0; i < seconds / step; i++)
-    {
-        boat.update(step, i * step, controls, navigable)
-    }
-}
-
-group('boat behaviour', () =>
-{
-    const open = new THREE.Vector3(0, 0, -150)
-
-    const cold = new Boat(open.clone(), { loadModel: false })
-    run(cold, { throttle: 1, steer: 0, boost: false }, 2)
-    check('eyes stay dark until someone boards',
-        cold.fireIntensity === 0 && cold.fire.particles.every((particle) => !particle.alive))
-
-    cold.occupied = true
-    run(cold, { throttle: 1, steer: 0, boost: false }, 1)
-    check('boarding lights the eyes',
-        cold.fireIntensity > 0.9 && cold.fire.particles.some((particle) => particle.alive))
-
-    const cruising = new Boat(open, { loadModel: false })
-    cruising.occupied = true
-    run(cruising, { throttle: 1, steer: 0, boost: false }, 40)
-    check('reaches a plausible cruise speed',
-        cruising.speed > 8.5 && cruising.speed < 11.5, `${cruising.speed.toFixed(2)} m/s`)
-    check('stays finite', Number.isFinite(cruising.position.x) && Number.isFinite(cruising.position.z))
-    check('floats on the surface',
-        Math.abs(cruising.position.y - (waterHeight(cruising.position.x, cruising.position.z, 40) + 0.1)) < 0.3,
-        `y ${cruising.position.y.toFixed(2)}`)
-
-    const boosting = new Boat(open, { loadModel: false })
-    run(boosting, { throttle: 1, steer: 0, boost: true }, 40)
-    check('boost is faster than cruise', boosting.speed > cruising.speed + 1.5,
-        `${boosting.speed.toFixed(2)} vs ${cruising.speed.toFixed(2)}`)
-
-    const reversing = new Boat(open, { loadModel: false })
-    run(reversing, { throttle: -1, steer: 0, boost: false }, 20)
-    check('reverse is slow and negative', reversing.speed < -1 && reversing.speed > -5,
-        `${reversing.speed.toFixed(2)} m/s`)
-
-    const turning = new Boat(open, { loadModel: false })
-    run(turning, { throttle: 1, steer: 1, boost: false }, 20)
-    check('steering changes heading', Math.abs(turning.yaw - Math.PI) > 1)
-    check('turning holds speed', turning.speed > 5, `${turning.speed.toFixed(2)} m/s`)
-
-    const pointing = new Boat(open.clone(), { loadModel: false })
-    const pointingStart = pointing.position.clone()
-    run(pointing, { throttle: 0, steer: 1, boost: false }, 2)
-    const slide = Math.hypot(pointing.position.x - pointingStart.x, pointing.position.z - pointingStart.z)
-    check('steering while stopped does not slide', slide < 1e-6, `${slide.toFixed(4)}m`)
-    check('steering while stopped turns the head', Math.abs(pointing.yaw - Math.PI) > 0.5)
-
-    const backing = new Boat(open.clone(), { loadModel: false })
-    backing.yaw = 0
-    run(backing, { throttle: -1, steer: 0, boost: false }, 3)
-    const travel = backing.position.clone().sub(open)
-    const along = travel.dot(backing.forward)
-    const across = travel.x * backing.forward.z - travel.z * backing.forward.x
-    check('reverse stays on the axis she faces', along < -1 && Math.abs(across) < 1e-6,
-        `along ${along.toFixed(2)} across ${across.toFixed(3)}`)
-
-    const drifting = new Boat(open, { loadModel: false })
-    run(drifting, { throttle: 0, steer: 0, boost: false }, 30)
-    check('idles to a stop', Math.abs(drifting.speed) < 0.1, `${drifting.speed.toFixed(3)} m/s`)
-
-    const blocked = new Boat(open, { loadModel: false })
-    const startZ = blocked.position.z
-    run(blocked, { throttle: 1, steer: 0, boost: false }, 10, () => false)
-    check('cannot cross impassable water', Math.abs(blocked.position.z - startZ) < 1e-9)
-
-    // The boarding point must sit between the hull and the pier edge.
-    const moored = new Boat(DOCK.mooring, { loadModel: false })
-    run(moored, { throttle: 0, steer: 0, boost: false }, 0.5)
-    const point = moored.boardingPoint()
-    check('boarding point is on the pier side of the hull',
-        point.x > DOCK.mooring.x && point.x < -DOCK.halfWidth,
-        `x ${point.x.toFixed(2)}`)
-    check('boarding point is within reach of the deck edge',
-        Math.abs(point.x) - DOCK.halfWidth < 3.4,
-        `${(Math.abs(point.x) - DOCK.halfWidth).toFixed(2)}m off the edge`)
-
-    // The berth has to sit outside the pier's no-go margin, which scales with
-    // beam — widen the vessel and she can get stuck against her own mooring.
-    const margin = BOAT.beam * 0.6
-    const berthClearance = Math.abs(DOCK.mooring.x) - (DOCK.halfWidth + margin)
-    check('the berth clears the pier no-go margin', berthClearance > 0.5,
-        `${berthClearance.toFixed(2)}m of slack`)
-})
-
 // ------------------------------------------------------------------ player
 
 function walk(player, keys, seconds, time = 0)
@@ -549,59 +290,67 @@ function walk(player, keys, seconds, time = 0)
 
 group('player', () =>
 {
-    const dock = new Dock({ loadModel: false })
-    const world = { platforms: dock.platforms, walls: dock.walls, terrainHeight }
+    /** A plain deck over open water, the size of the old pier. */
+    const PIER = { deckY: 1.6, halfWidth: 6.92, seaZ: -6, landZ: 46, spawn: new THREE.Vector3(0, 1.6, 40) }
+    const world = {
+        platforms: [new THREE.Box3(
+            new THREE.Vector3(-PIER.halfWidth, PIER.deckY - 4, PIER.seaZ),
+            new THREE.Vector3(PIER.halfWidth, PIER.deckY, PIER.landZ)
+        )],
+        walls: [],
+        terrainHeight: () => Number.NEGATIVE_INFINITY
+    }
 
-    const standing = new Player(world, DOCK.spawn)
+    const standing = new Player(world, PIER.spawn)
     walk(standing, [], 1)
-    check('stands on the deck', Math.abs(standing.position.y - DOCK.deckY) < 1e-6,
+    check('stands on the deck', Math.abs(standing.position.y - PIER.deckY) < 1e-6,
         `y ${standing.position.y.toFixed(3)}`)
     check('is grounded', standing.onGround)
 
     // The quay has no railings, so the deck holds you and the edges do not.
-    const walking = new Player(world, DOCK.spawn)
+    const walking = new Player(world, PIER.spawn)
     walking.yaw = 0 // looking down the pier, toward the sea
     walk(walking, ['KeyW', 'ShiftLeft'], 4)
-    check('walks seaward along the pier', walking.position.z < DOCK.spawn.z - 20,
+    check('walks seaward along the pier', walking.position.z < PIER.spawn.z - 20,
         `z ${walking.position.z.toFixed(2)}`)
-    check('stays on the deck', Math.abs(walking.position.y - DOCK.deckY) < 1e-6)
+    check('stays on the deck', Math.abs(walking.position.y - PIER.deckY) < 1e-6)
 
-    const overboard = new Player(world, new THREE.Vector3(0, DOCK.deckY, DOCK.seaZ + 2))
+    const overboard = new Player(world, new THREE.Vector3(0, PIER.deckY, PIER.seaZ + 2))
     overboard.yaw = 0
     const offTheEnd = walk(overboard, ['KeyW', 'ShiftLeft'], 4)
     check('the seaward end is open', offTheEnd && overboard.inWater)
 
-    const pushing = new Player(world, new THREE.Vector3(0, DOCK.deckY, 25))
+    const pushing = new Player(world, new THREE.Vector3(0, PIER.deckY, 25))
     pushing.yaw = 0
     const offTheSide = walk(pushing, ['KeyA'], 6)
     check('the side is open for boarding', offTheSide && pushing.inWater)
 
-    const recovered = new Player(world, DOCK.spawn)
+    const recovered = new Player(world, PIER.spawn)
     recovered.inWater = true
     recovered.position.set(0, 0, -30)
     recovered.respawn()
-    check('respawn restores the spawn point', recovered.position.equals(DOCK.spawn) && !recovered.inWater)
+    check('respawn restores the spawn point', recovered.position.equals(PIER.spawn) && !recovered.inWater)
 
     // Jumping should leave the deck and come back to it.
-    const jumper = new Player(world, DOCK.spawn)
+    const jumper = new Player(world, PIER.spawn)
     const input = stubInput([])
     input.wasPressed = (code) => code === 'Space'
     jumper.update(1 / 60, input, 0)
-    check('jump leaves the deck', jumper.position.y > DOCK.deckY && !jumper.onGround,
+    check('jump leaves the deck', jumper.position.y > PIER.deckY && !jumper.onGround,
         `y ${jumper.position.y.toFixed(3)}`)
     walk(jumper, [], 2)
-    check('lands back on the deck', Math.abs(jumper.position.y - DOCK.deckY) < 1e-6)
+    check('lands back on the deck', Math.abs(jumper.position.y - PIER.deckY) < 1e-6)
 
     const camera = new THREE.PerspectiveCamera()
     standing.applyToCamera(camera)
     check('camera sits at eye height above the deck',
-        camera.position.y > DOCK.deckY + 1.4 && camera.position.y < DOCK.deckY + 1.8,
+        camera.position.y > PIER.deckY + 1.4 && camera.position.y < PIER.deckY + 1.8,
         `y ${camera.position.y.toFixed(2)}`)
 
     // The water sheet is single-sided, so a submerged eye would cull it away
     // and the ocean would disappear while swimming.
-    const swimmer = new Player(world, DOCK.spawn)
-    swimmer.position.set(-(DOCK.halfWidth + 3), DOCK.deckY, 2)
+    const swimmer = new Player(world, PIER.spawn)
+    swimmer.position.set(-(PIER.halfWidth + 3), PIER.deckY, 2)
     let lowestClearance = Infinity
 
     for (let i = 0; i < 400; i++)
@@ -634,12 +383,14 @@ function ride(elephant, controls, seconds)
 
 group('elephant behaviour', () =>
 {
+    /** Level ground at y = 0, for the checks that need something to stand on. */
+    const flat = () => 0
     const beach = new THREE.Vector3(15, 0, 48.5)
     const sky = new THREE.Vector3(0, 25, -80)
 
-    const standing = new Elephant(beach, { loadModel: false, yaw: 0 })
+    const standing = new Elephant(beach, { loadModel: false, yaw: 0, floor: flat })
     check('starts on the ground when placed there',
-        Math.abs(standing.position.y - terrainHeight(beach.x, beach.z)) < 0.2,
+        Math.abs(standing.position.y) < 0.2,
         `y ${standing.position.y.toFixed(2)}`)
 
     const level = new Elephant(sky, { loadModel: false, yaw: 0 })
@@ -678,17 +429,16 @@ group('elephant behaviour', () =>
     check('steering while stopped does not slide', slide < 1e-6, `${slide.toFixed(4)}m`)
     check('steering while stopped turns her', Math.abs(turning.yaw) > 0.5)
 
-    const diver = new Elephant(new THREE.Vector3(0, 40, 70), { loadModel: false, yaw: 0 })
+    const diver = new Elephant(new THREE.Vector3(0, 40, 70), { loadModel: false, yaw: 0, floor: flat })
     diver.pitch = 1.1
     ride(diver, { throttle: 1, boost: true }, 5)
-    const ground = terrainHeight(diver.position.x, diver.position.z)
-    check('a dive stops at the ground', diver.position.y >= ground - 1e-6 && diver.position.y < 40,
-        `y ${diver.position.y.toFixed(2)} ground ${ground.toFixed(2)}`)
+    check('a dive stops at the ground', diver.position.y >= -1e-6 && diver.position.y < 40,
+        `y ${diver.position.y.toFixed(2)}`)
 
     const high = new Elephant(new THREE.Vector3(0, 30, -80), { loadModel: false, yaw: 0 })
     check('no dismount while airborne', high.dismountSpot() === null)
 
-    const parked = new Elephant(beach, { loadModel: false, yaw: Math.atan2(-12, -2) })
+    const parked = new Elephant(beach, { loadModel: false, yaw: Math.atan2(-12, -2), floor: flat })
     const flank = parked.boardingPoint()
     check('boarding point sits off her side',
         Math.hypot(flank.x - parked.position.x, flank.z - parked.position.z) > 1.5)
@@ -697,8 +447,8 @@ group('elephant behaviour', () =>
     check('no dismount while she is moving', parked.dismountSpot() === null)
     parked.halt()
     const landing = parked.dismountSpot()
-    check('dismount lands on dry ground beside her',
-        landing !== null && landing.y >= 0.55 && Math.hypot(landing.x - parked.position.x, landing.z - parked.position.z) > 1,
+    check('dismount lands on the ground beside her',
+        landing !== null && Math.abs(landing.y) < 1e-6 && Math.hypot(landing.x - parked.position.x, landing.z - parked.position.z) > 1,
         landing ? `${landing.toArray().map((value) => value.toFixed(2)).join(', ')}` : 'none')
 
     const ivory = new THREE.MeshStandardMaterial({ name: 'Polished Ivory Wood', transparent: true, depthWrite: false })

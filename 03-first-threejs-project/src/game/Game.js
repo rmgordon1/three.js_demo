@@ -3,6 +3,7 @@ import { Input } from './Input.js'
 import { HUD } from './HUD.js'
 import { Environment } from '../world/Environment.js'
 import { Castle, CASTLE, CASTLE_RING, MAIN_YAW } from '../world/Castle.js'
+import { Interior } from '../world/Interior.js'
 import { HOOP_COUNT, Racetrack } from '../world/Racetrack.js'
 import { Confetti } from '../world/Confetti.js'
 import { BrickWall } from '../world/BrickWall.js'
@@ -113,6 +114,13 @@ export class Game
             return castle
         })
 
+        this.interior = new Interior()
+        this.scene.add(this.interior.group)
+        /** The castle whose door was used, while the player is in the room. */
+        this.returnCastle = null
+        /** Seconds to hide the door prompt after a crossing, so the far side does not ask immediately. */
+        this.portalHold = 0
+
         this.racetrack = new Racetrack()
         this.scene.add(this.racetrack.group)
 
@@ -135,15 +143,19 @@ export class Game
         this.idleControls = { throttle: 0, pitch: 0, steer: 0, boost: false }
 
         const spawnAt = this.castle.localToWorld(CASTLE.spawn.x, CASTLE.spawn.z)
+        this.outsideCastles = [this.castle, ...this.outerCastles]
+        this.homeSpawn = new THREE.Vector3(spawnAt.x, CASTLE.spawn.y, spawnAt.z)
+        this.homeYaw = this.castle.yaw + CASTLE.spawnYaw
+        this.homeVoid = CASTLE.deckY - VOID_DROP
         this.player = new Player({
             platforms: [],
             walls: [],
-            castles: [this.castle, ...this.outerCastles],
+            castles: this.outsideCastles,
             terrainHeight: () => Number.NEGATIVE_INFINITY,
             swims: false,
-            spawnYaw: this.castle.yaw + CASTLE.spawnYaw,
-            voidY: CASTLE.deckY - VOID_DROP
-        }, new THREE.Vector3(spawnAt.x, CASTLE.spawn.y, spawnAt.z))
+            spawnYaw: this.homeYaw,
+            voidY: this.homeVoid
+        }, this.homeSpawn.clone())
     }
 
     start()
@@ -220,22 +232,38 @@ export class Game
         if (shouldRespawn)
         {
             this.player.respawn()
-            this.hud.setNotice('Back in the courtyard.')
+            this.hud.setNotice(this.returnCastle ? 'Back by the door.' : 'Back in the courtyard.')
         }
+
+        // A crossing puts the player down beside the far door. Hold the prompt
+        // until they have had a moment to step clear of it.
+        let door = null
+        if (this.portalHold > 0)
+            this.portalHold = Math.max(0, this.portalHold - delta)
+        else
+            door = this.#nearbyCastleDoor()
 
         this.player.applyToCamera(this.camera)
 
-        const canBoard = this.castle.canBoard(this.player.position)
-        const canMount = !canBoard && this.#canMountElephant()
+        const canBoard = !door && this.castle.canBoard(this.player.position)
+        const canMount = !door && !canBoard && this.#canMountElephant()
 
-        if (canBoard && this.input.wasPressed('KeyE'))
+        if (door && this.input.wasPressed('KeyE'))
+        {
+            if (door === 'exit') this.#leaveInterior()
+            else this.#enterInterior(door)
+        }
+        else if (canBoard && this.input.wasPressed('KeyE'))
         {
             this.#enterSubmarine()
             return
         }
-        if (canMount && this.input.wasPressed('KeyE')) this.#mountElephant()
+        else if (canMount && this.input.wasPressed('KeyE')) this.#mountElephant()
 
-        this.hud.setPrompt(canBoard ? 'Press E to enter' : canMount ? 'Press E to mount' : null)
+        const doorPrompt = door && this.portalHold <= 0
+            ? (door === 'exit' ? 'Press E to leave' : 'Press E to enter')
+            : null
+        this.hud.setPrompt(doorPrompt ?? (canBoard ? 'Press E to enter' : canMount ? 'Press E to mount' : null))
         this.hud.setCourse(null)
         this.hud.hideBoatReadout()
         this.hud.setCrosshairVisible(true)
@@ -493,6 +521,64 @@ export class Game
 
         if (this.hud.disqualify()) this.racetrack.abandon()
         else this.hud.setNotice('Back on the platform.')
+    }
+
+    /**
+     * The triple-castle door in reach, or 'exit' at the room's door.
+     * Pressing E there is what crosses. Standing in the doorway does not.
+     */
+    #nearbyCastleDoor()
+    {
+        if (this.returnCastle)
+            return this.interior.atExit(this.player.position) ? 'exit' : null
+
+        if (!this.interior.loaded) return null
+
+        for (const castle of this.outerCastles)
+        {
+            if (castle.atDoor(this.player.position)) return castle
+        }
+
+        return null
+    }
+
+    #enterInterior(castle)
+    {
+        const spot = this.scratch
+        const yaw = this.interior.entrancePoint(spot)
+
+        this.returnCastle = castle
+        this.player.world.castles = [this.interior]
+        this.player.position.copy(spot)
+        this.player.velocityY = 0
+        this.player.onGround = true
+        this.player.yaw = yaw
+        this.player.pitch = 0
+        this.player.spawn.copy(spot)
+        this.player.spawnYaw = yaw
+        this.player.voidY = -30
+        this.portalHold = 0.45
+        this.hud.setNotice('Inside the castle.')
+    }
+
+    #leaveInterior()
+    {
+        const castle = this.returnCastle
+        const spot = this.scratch
+        const yaw = castle.doorExit(spot)
+
+        this.returnCastle = null
+        this.player.world.castles = this.outsideCastles
+        this.player.position.copy(spot)
+        this.player.velocityY = 0
+        this.player.onGround = true
+        this.player.yaw = yaw
+        this.player.pitch = 0
+        this.player.spawn.copy(this.homeSpawn)
+        this.player.spawnYaw = this.homeYaw
+        this.player.voidY = this.homeVoid
+        this.portalHold = 0.45
+        this.hud.setNotice('Back outside.')
     }
 
     /** The castle whose deck is under (x, z), if any. */

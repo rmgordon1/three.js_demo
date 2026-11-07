@@ -3,7 +3,7 @@ import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js'
 import { RingFire } from './RingFire.js'
 
 /** The gold hoop and its flag. Served out of static/. */
-const RING_URL = '/ring.glb'
+const RING_URL = '/models/ring.glb'
 
 /**
  * The floor plan, in metres, with the main castle at the origin.
