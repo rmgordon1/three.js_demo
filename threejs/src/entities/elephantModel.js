@@ -1,7 +1,8 @@
 import * as THREE from 'three'
 import { createGLTFLoader } from '../world/gltfLoader.js'
+import { assetUrl } from '../config.js'
 /** Served out of static/. Idle and run clips on a skinned elephant. */
-const MODEL_URL = '/models/elephant.002.glb'
+const MODEL_URL = assetUrl('/models/elephant.002.glb')
 
 /**
  * Gameplay envelope. The mesh is scaled to this length; beam is the

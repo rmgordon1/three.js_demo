@@ -2,20 +2,21 @@ import * as THREE from 'three'
 import { createGLTFLoader } from './gltfLoader.js'
 import { toCreasedNormals } from 'three/addons/utils/BufferGeometryUtils.js'
 import { ReentryFire } from './ReentryFire.js'
+import { assetUrl } from '../config.js'
 
 /** The outer castles. Served out of static/. */
-const RING_URL = '/models/triple_castle.glb'
+const RING_URL = assetUrl('/models/triple_castle.glb')
 
 /** The castle you start in. Same export units as the ring, so it takes the same scale. */
-const MAIN_URL = '/models/main_castle.glb'
-const LEADERBOARD_URL = '/models/leaderboard.glb'
+const MAIN_URL = assetUrl('/models/main_castle.glb')
+const LEADERBOARD_URL = assetUrl('/models/leaderboard.glb')
 
 /**
  * Hung in the main courtyard's ring. The file is already in that castle's
  * units: the hull runs through the opening, and the crown of the hull meets
  * the two chains that drop from `sub_stand` on either side of the sail.
  */
-const SUBMARINE_URL = '/models/submarine.glb'
+const SUBMARINE_URL = assetUrl('/models/submarine.glb')
 /** Horizontal metres from the hatch before it starts to open. */
 const HATCH_REACH = 2.8
 /** Closer than the open radius: standing at the lip, able to step in. */

@@ -1,11 +1,12 @@
 import * as THREE from 'three'
 import { RGBELoader } from 'three/addons/loaders/RGBELoader.js'
+import { assetUrl } from '../config.js'
 
 /**
  * Served out of static/. A 2K copy of the above-the-clouds panorama.
  * The source frame is 14K and about a gigabyte; decoding that stalls the page.
  */
-const SKY_URL = '/environment/above-the-clouds-2k.hdr'
+const SKY_URL = assetUrl('/environment/above-the-clouds-2k.hdr')
 
 /**
  * Bearing of the sun in the panorama. The disk itself sits just under the

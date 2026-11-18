@@ -1,9 +1,10 @@
 import * as THREE from 'three'
 import { createGLTFLoader } from './gltfLoader.js'
 import { RingFire } from './RingFire.js'
+import { assetUrl } from '../config.js'
 
 /** The gold hoop and its flag. Served out of static/. */
-const RING_URL = '/models/ring.glb'
+const RING_URL = assetUrl('/models/ring.glb')
 
 /**
  * The floor plan, in metres, with the main castle at the origin.

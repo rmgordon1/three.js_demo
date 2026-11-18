@@ -2,9 +2,10 @@ import * as THREE from 'three'
 import { createGLTFLoader } from './gltfLoader.js'
 import { ELEPHANT } from '../entities/Elephant.js'
 import { withMatrixInside, driveMatrixClock } from './matrixBricks.js'
+import { assetUrl } from '../config.js'
 
 /** One brick from static/brick.glb. The wall in that file is this brick, repeated. */
-const BRICK_URL = '/models/brick.glb'
+const BRICK_URL = assetUrl('/models/brick.glb')
 
 /** Thickness, height, and length of the authored brick, in metres. */
 export const BRICK = { width: 0.75, height: 0.75, length: 2 }

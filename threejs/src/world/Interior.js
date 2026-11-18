@@ -1,8 +1,9 @@
 import * as THREE from 'three'
 import { createGLTFLoader } from './gltfLoader.js'
+import { assetUrl } from '../config.js'
 
 /** The room behind a triple castle's door. Served out of static/. */
-const INTERIOR_URL = '/models/interior.glb'
+const INTERIOR_URL = assetUrl('/models/interior.glb')
 
 /** The file is the size of a doorway. Twice that fills the castle room. */
 const INTERIOR_SCALE = 2
@@ -14,7 +15,7 @@ const INTERIOR_SCALE = 2
 const ROOM_GROWTH = 2
 
 /** The furniture pack. Real size, in metres, sharing one Textures.png. */
-const FURNITURE_URL = '/models/indoor_objects_collection/'
+const FURNITURE_URL = assetUrl('/models/indoor_objects_collection/')
 
 /**
  * A sample of the furniture, in the room's local metres. The door is at
@@ -40,7 +41,7 @@ const FURNITURE = [
 ]
 
 /** The triple castles' pixelated stone, pulled out of triple_castle.glb. */
-const STONE_URL = '/textures/stone_wall/'
+const STONE_URL = assetUrl('/textures/stone_wall/')
 
 /**
  * Metres of wall one stone tile covers on the triple castles: 1.018 export
